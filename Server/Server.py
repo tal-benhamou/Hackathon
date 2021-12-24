@@ -90,7 +90,7 @@ class Server():
         
         receive_mess = connection.recv(1024) # name of Team
         self._Teams[self._numTeams] = (receive_mess[:receive_mess.index("\n")], connection, client_address)
-        if (self._numTeams == 1):
+        if (self._numTeams == 2):
             self._StartGame.release()
 
 
