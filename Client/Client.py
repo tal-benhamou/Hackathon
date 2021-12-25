@@ -6,7 +6,6 @@ import sys
 import keyboard
 import time
 from select import select
-
 class Client():
 
     def __init__(self, port, ip) -> None:
@@ -58,6 +57,7 @@ class Client():
         print(from_server)
         start_time = time.time()
         # user_input , stam, stam2 = select([keyboard.read_key()], [], [],10)
+        print("press the answer")
         user_input = keyboard.read_key()
         if (len(user_input) == 0):
             pass

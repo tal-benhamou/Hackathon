@@ -28,6 +28,7 @@ class Server():
         self._stopServer = False
         self._FirstAns = Lock()
         self._finishGame = False
+        self._someOneAns = Lock()
 
         self.startTCP()
 
@@ -118,7 +119,7 @@ class Server():
 
         
 
-    
+
     def Game(self): # main thread
         time.sleep(10)
         problem = self.GeneratingProblem()
@@ -130,14 +131,18 @@ class Server():
         for key, value in self._Teams.items():
             value[1].sendall(message.encode())
         
-        l = Lock()
-        l.acquire()
+        # l = Lock()
+        # l.acquire()
+        print(f"state of someOneAns = {self._someOneAns.locked()}")
+        self._someOneAns.acquire()
+        print(f"state of someOneAns = {self._someOneAns.locked()}")
         print("threads go into checkFirst")
-        team1 = Thread(target= self.CheckFirst, args=(answer, 1, l))
-        team2 = Thread(target= self.CheckFirst, args=(answer, 2, l))
+        team1 = Thread(target= self.CheckFirst, args=(answer, 1))
+        team2 = Thread(target= self.CheckFirst, args=(answer, 2))
         team1.start()
         team2.start()
-        l.acquire()
+        self._someOneAns.acquire()
+        # l.acquire()
         print("some one answer")
         time.sleep(0.001)
         for key, value in self._Teams.items():
@@ -152,33 +157,39 @@ class Server():
 
         # jumping to 'startTCP()' and ending the game
 
-    def CheckFirst(self, answer, c, lock) -> str:
+    def CheckFirst(self, answer, c) -> str:
+        print(f"answer = {answer}")
         start_time = time.time()
         summary = ''
         while (time.time() - start_time < 10):      
-            answer_Team = self._Teams[c][1].recv(1024) # maybe need less than 1024
-            self._FirstAns.acquire()
-            if (not answer_Team and not self._finishGame and answer_Team==answer):
+            answer_Team = str(self._Teams[c][1].recv(1024), 'utf-8') # maybe need less than 1024
+            print(f"answer of team{c} = {answer_Team}")
+            print(f"not answer_Team = {answer_Team != None}")
+            # self._FirstAns.acquire()
+            print("start ifim")
+            if ((answer_Team != None) and (not self._finishGame) and answer_Team==answer):
                 summary = "Game over!\nThe correct answer was " +str(answer)+ "!\n\n" \
                     + "Congratulations to the winner: " +self._Teams[c][0]
-                lock.release()
+                print("if1")
+                self._someOneAns.release()
                 self._finishGame = True
-                self._FirstAns.release()
+                # self._FirstAns.release()
                 return summary
-            elif (not answer_Team and not self._finishGame and answer_Team!=answer): 
+            elif ((answer_Team != None) and (not self._finishGame) and answer_Team!=answer):
                 if (c==1):
                     summary = "Game over!\nThe correct answer was " +str(answer)+ "!\n\n" \
                         + "Congratulations to the winner: " +self._Teams[2][0]
                 else:
                     summary = "Game over!\nThe correct answer was " +str(answer)+ "!\n\n" \
                         + "Congratulations to the winner: " +self._Teams[1][0]
-                lock.release()
+                print("if2")
+                self._someOneAns.release()
                 self._finishGame = True
-                self._FirstAns.release()
+                # self._FirstAns.release()
                 return summary
-            self._FirstAns.release()
+            # self._FirstAns.release()
         try:
-            lock.release()
+            self._someOneAns.release()
         except:
             pass
         return "draw"
