@@ -1,4 +1,4 @@
-from scapy import *
+# from scapy import scapy
 import socket
 from _thread import start_new_thread
 from threading import Thread, Lock 
@@ -9,11 +9,12 @@ import random
 
 class Server():
     
-    def __init__(self, IP, port, channel  ) -> None:
+    def __init__(self, IP, port, channel ) -> None:
         self._port = port
         self._IP = IP
         self._channel = channel
         self._socketTCP = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self._socketTCP.settimeout(1)
         self._socketUDP = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self._serverAddress = ('', self._port)
         self._socketTCP.bind(self._serverAddress)
@@ -59,10 +60,10 @@ class Server():
     def Listening_UDP(self):
         print(f"Server started, listening on IP address {self._IP}")
     #opened_UDP_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        packet_to_send = struct.pack("",0xabcddcba, 0x2, self._IP)
+        packet_to_send = struct.pack(">IbH",0xabcddcba, 0x2, self._port)
         
         while (self._StartGame.locked()): # true = the game dont start yet
-            self._socketUDP.sendto(packet_to_send,("", 13117))
+            self._socketUDP.sendto(packet_to_send,("localhost", self._channel))
             time.sleep(1)
             
 
@@ -132,7 +133,7 @@ class Server():
         start_time = time.time()
         summary = ''
         while (time.time() - start_time < 10):      
-            answer_Team = self._Teams[c][1].recv(1024) # maybe need less than 1024
+            answer_Team = self._Teams[c][1].recv(1024,) # maybe need less than 1024
             self._FirstAns.acquire()
             if (not answer_Team and not self._finishGame and answer_Team==answer):
                 summary = "Game over!\nThe correct answer was " +str(answer)+ "!\n\n" \
@@ -166,9 +167,8 @@ class Server():
         lst = [str(random.randint(1,4)),"+", str(random.randint(1,5))]
         return lst
 
-
 if __name__ == "__main__":
-    print('safdg')
+    Server ("127.0.0.1", 2062, 2062)
 
     
 
