@@ -14,10 +14,12 @@ class Server():
         self._IP = IP
         self._channel = channel
         self._socketTCP = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self._socketTCP.settimeout(1)
+        self._socketTCP.settimeout(10)
         self._socketUDP = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self._serverAddress = ('', self._port)
-        self._socketTCP.bind(self._serverAddress)
+        self._serverAddress = (self._IP, self._port)
+        self._socketUDP.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self._socketUDP.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+
         self._Mutex = Lock()
         self._Teams = {}
         self._numTeams = 0
@@ -34,8 +36,11 @@ class Server():
 
     def startTCP(self):
         # starting server with thread
-        Thread(target= self.Listening_UDP()).start()
-        Thread(target = self.Listening_TCP()).start()
+        thread1 = threading.Thread(target= self.Listening_UDP)
+        thread2 = threading.Thread(target= self.Listening_TCP)
+        thread1.start()
+        thread2.start()
+        # self.Listening_UDP()
         self._StartGame.acquire() 
         self.Game()
         # AFTER GAME FINISHED 
@@ -61,18 +66,30 @@ class Server():
         print(f"Server started, listening on IP address {self._IP}")
     #opened_UDP_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         packet_to_send = struct.pack(">IbH",0xabcddcba, 0x2, self._port)
+        print(self._port)
         
-        while (self._StartGame.locked()): # true = the game dont start yet
-            self._socketUDP.sendto(packet_to_send,("localhost", self._channel))
+        while (self._numTeams != 2): # true = the game dont start yet
+            print("send UDP")
+            # print(self._StartGame.locked())
+            self._socketUDP.sendto(packet_to_send,('<broadcast>', self._channel))
             time.sleep(1)
             
 
 
 
     def Listening_TCP(self):
-        self._socketTCP.listen(1)
+
+
+        self._socketTCP.bind(self._serverAddress)
+        self._socketTCP.listen()
         while True:
-            connection, client_address = self._socketTCP.accept() # waiting for client
+
+            try:
+                print("Listening on TCP")
+                connection, client_address = self._socketTCP.accept() # waiting for client
+            except:
+                print("exceptServer")
+                continue
             self._Mutex.acquire()
             self._numTeams += 1
             self._Mutex.release()
@@ -80,6 +97,8 @@ class Server():
                 start_new_thread(self.Client_Handle, (connection, client_address))
             else:
                 connection.sendall() # rejecting
+                break
+            if (self._numTeams == 2):
                 break
             
 
@@ -89,16 +108,18 @@ class Server():
 
     def Client_Handle(self, connection, client_address):
         
-        receive_mess = connection.recv(1024) # name of Team
+        receive_mess = str(connection.recv(1024), 'utf-8') # name of Team
+        print(receive_mess)
         self._Teams[self._numTeams] = (receive_mess[:receive_mess.index("\n")], connection, client_address)
         if (self._numTeams == 2):
+            print("releasing")
             self._StartGame.release()
 
 
         
 
     
-    def Game(self):
+    def Game(self): # main thread
         time.sleep(10)
         problem = self.GeneratingProblem()
         answer = int(problem[0])+int(problem[2])
@@ -111,11 +132,13 @@ class Server():
         
         l = Lock()
         l.acquire()
-        team1 = Thread(traget= self.CheckFirst(), args=(answer, 1, l))
-        team2 = Thread(target=self.CheckFirst(), args=(answer, 2, l))
+        print("threads go into checkFirst")
+        team1 = Thread(target= self.CheckFirst, args=(answer, 1, l))
+        team2 = Thread(target= self.CheckFirst, args=(answer, 2, l))
         team1.start()
         team2.start()
         l.acquire()
+        print("some one answer")
         time.sleep(0.001)
         for key, value in self._Teams.items():
             if (not team1 and team2 != "draw"):
@@ -133,7 +156,7 @@ class Server():
         start_time = time.time()
         summary = ''
         while (time.time() - start_time < 10):      
-            answer_Team = self._Teams[c][1].recv(1024,) # maybe need less than 1024
+            answer_Team = self._Teams[c][1].recv(1024) # maybe need less than 1024
             self._FirstAns.acquire()
             if (not answer_Team and not self._finishGame and answer_Team==answer):
                 summary = "Game over!\nThe correct answer was " +str(answer)+ "!\n\n" \
@@ -168,7 +191,7 @@ class Server():
         return lst
 
 if __name__ == "__main__":
-    Server ("127.0.0.1", 2062, 2062)
+    Server ("127.0.0.1", 2062, 13117)
 
     
 
