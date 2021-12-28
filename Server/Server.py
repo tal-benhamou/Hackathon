@@ -1,4 +1,5 @@
-# from scapy import scapy
+import scapy
+from scapy.arch import get_if_addr
 import socket
 from _thread import start_new_thread
 from threading import Thread, Lock
@@ -7,6 +8,11 @@ import struct
 import time
 import random
 # import readchar
+
+CHANNEL_UDP = 13117
+MAGIC_COOKIE = 0xabcddcba
+TYPE_BROADCAST = 0x2 
+KILO_BYTE = 1024
 
 
 class Server():
@@ -79,13 +85,14 @@ class Server():
         # self._socketUDP.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
         print(f"Server started, listening on IP address {self._IP}")
         # opened_UDP_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        packet_to_send = struct.pack(">IbH", 0xabcddcba, 0x2, self._port)
+        packet_to_send = struct.pack(">IbH", MAGIC_COOKIE, TYPE_BROADCAST, self._port)
         print(self._port)
+        ip = '.'.join(self._IP.split('.')[:2]) + '.255.255'
 
         while (self._numTeams != 2):  # true = the game dont start yet
             print("send UDP")
             # print(self._StartGame.locked())
-            self._socketUDP.sendto(packet_to_send, ('<broadcast>', self._channel))
+            self._socketUDP.sendto(packet_to_send, (ip, self._channel))
             time.sleep(1)
 
     def Listening_TCP(self):
@@ -121,7 +128,7 @@ class Server():
 
     def Client_Handle(self, connection, client_address, nt):
         # time.sleep(0.5)
-        receive_mess = str(connection.recv(1024), 'utf-8')  # name of Team
+        receive_mess = str(connection.recv(KILO_BYTE), 'utf-8')  # name of Team
         print(receive_mess)
         self._Teams[nt][0] = receive_mess[:receive_mess.index("\n")]
         print(f"self._Teams[{nt}] = {self._Teams[nt]}")
@@ -187,7 +194,7 @@ class Server():
         while (time.time() - start_time < 10):
             try:
                 print(f"thread of team{c} is waiting in recv")
-                answer_Team = str(self._Teams[c][1].recv(1024), 'utf-8')  # maybe need less than 1024
+                answer_Team = str(self._Teams[c][1].recv(KILO_BYTE), 'utf-8')  # maybe need less than 1024
                 print(f"thread of team{c} is after recv")
             except ConnectionAbortedError:
                 return
@@ -273,7 +280,7 @@ class Server():
 
 
 if __name__ == "__main__":
-    Server("127.0.0.1", 2062, 13117)
+    Server(get_if_addr("eth1"), 2990, CHANNEL_UDP)
 
 
 
