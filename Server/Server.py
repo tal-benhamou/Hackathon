@@ -280,7 +280,7 @@ class Server():
 
 
 if __name__ == "__main__":
-    Server(get_if_addr("eth1"), 2990, CHANNEL_UDP)
+    Server(get_if_addr("eth1"), 2988, CHANNEL_UDP)
 
 
 
