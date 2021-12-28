@@ -52,7 +52,8 @@ class Client():
             except:
                 continue  # try again
             print(f"Received offer from {ip},attempting to connect...")
-            # print(f"offer_from_server = {offer_from_server}")
+            print(f"offer_from_server = {offer_from_server}")
+            
             magic_cookie, types, TCPort = struct.unpack(">IbH", offer_from_server)
             if (magic_cookie != MAGIC_COOKIE or types != TYPE_BROADCAST):
                 print("if")
