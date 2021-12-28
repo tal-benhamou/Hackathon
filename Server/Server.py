@@ -1,208 +1,279 @@
 # from scapy import scapy
 import socket
 from _thread import start_new_thread
-from threading import Thread, Lock 
+from threading import Thread, Lock
 import threading
 import struct
 import time
 import random
+# import readchar
+
 
 class Server():
-    
-    def __init__(self, IP, port, channel ) -> None:
+
+    def __init__(self, IP, port, channel) -> None:
+
         self._port = port
         self._IP = IP
         self._channel = channel
+
+        self._serverAddress = (self._IP, self._port)
         self._socketTCP = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._socketTCP.settimeout(10)
+        self._socketTCP.bind(self._serverAddress)
+
         self._socketUDP = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self._serverAddress = (self._IP, self._port)
         self._socketUDP.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self._socketUDP.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
 
-        self._Mutex = Lock()
-        self._Teams = {}
-        self._numTeams = 0
+        self._numTeamINC = Lock()
         self._StartGame = Lock()
-        self._StartGame.acquire() # for waiting to event in 'startTCP()'
-        self._stopServer = False
-        self._FirstAns = Lock()
-        self._finishGame = False
         self._someOneAns = Lock()
 
-        self.startTCP()
+
+        self._Teams = {}
+        self._numTeams = 0
+        self._result = ""
+        self._stopServer = False
+        self._finishGame = False
+
+        self._StartGame.acquire()  # for waiting to event in 'startServer()'
+
+        self.startServer()
 
     def stopServer(self):
         self._stopServer = True
 
-    def startTCP(self):
-        # starting server with thread
-        thread1 = threading.Thread(target= self.Listening_UDP)
-        thread2 = threading.Thread(target= self.Listening_TCP)
-        thread1.start()
-        thread2.start()
-        # self.Listening_UDP()
-        self._StartGame.acquire() 
+    def startServer(self):
+        # starting server with threads
+        self._FirstAns = Lock()
+        threading.Thread(target=self.Listening_UDP).start()
+        threading.Thread(target=self.Listening_TCP).start()
+
+        self._StartGame.acquire() # wait here, then its open - the thread lock it and continue
+        self._StartGame.release() # for waiting in the next game
         self.Game()
-        # AFTER GAME FINISHED 
+        self._StartGame.acquire()  # for waiting to event in the next game
+        # AFTER GAME FINISHED
         # Closing TCP Connections
         for key, val in self._Teams.items():
             val[1].close()
-        
+
         print("Game Over, sending out offer requests...")
         self._finishGame = False
         self._Teams.clear()
         self._numTeams = 0
-        self._StartGame.acquire()  # for waiting to event in the next game
+        print("Almost Another Game")
 
+        print("Another Game")
         if (self._stopServer):
             self._socketTCP.close()
             self._socketUDP.close()
             return
 
-        self.startTCP()
-
+        self.startServer()
 
     def Listening_UDP(self):
+        # self._socketUDP = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        # self._socketUDP.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        # self._socketUDP.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
         print(f"Server started, listening on IP address {self._IP}")
-    #opened_UDP_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        packet_to_send = struct.pack(">IbH",0xabcddcba, 0x2, self._port)
+        # opened_UDP_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        packet_to_send = struct.pack(">IbH", 0xabcddcba, 0x2, self._port)
         print(self._port)
-        
-        while (self._numTeams != 2): # true = the game dont start yet
+
+        while (self._numTeams != 2):  # true = the game dont start yet
             print("send UDP")
             # print(self._StartGame.locked())
-            self._socketUDP.sendto(packet_to_send,('<broadcast>', self._channel))
+            self._socketUDP.sendto(packet_to_send, ('<broadcast>', self._channel))
             time.sleep(1)
-            
-
-
 
     def Listening_TCP(self):
+        # self._socketTCP = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        # self._socketTCP.settimeout(10)
+        # self._serverAddress = (self._IP, self._port)
+        # self._socketTCP.bind(self._serverAddress)
 
-
-        self._socketTCP.bind(self._serverAddress)
         self._socketTCP.listen()
         while True:
-
             try:
                 print("Listening on TCP")
-                connection, client_address = self._socketTCP.accept() # waiting for client
+                connection, client_address = self._socketTCP.accept()  # waiting for client
             except:
                 print("exceptServer")
                 continue
-            self._Mutex.acquire()
+            self._numTeamINC.acquire()
             self._numTeams += 1
-            self._Mutex.release()
+            self._Teams[self._numTeams] = ['', connection, client_address]
+            print(f"numTeams = {self._numTeams}")
             if (self._numTeams < 3):
-                start_new_thread(self.Client_Handle, (connection, client_address))
+                connection.settimeout(10) # recv will wait 10 sec
+                start_new_thread(self.Client_Handle, (connection, client_address, self._numTeams))
             else:
-                connection.sendall() # rejecting
+                # connection.sendall()  # rejecting
                 break
+            self._numTeamINC.release()
+
             if (self._numTeams == 2):
+                print("numTeams = 2 and ListeningTCP thread is die")
                 break
-            
+        # time.sleep(0.005)
 
-        # Game כרגע רק כאשר הלקוח השלישי מבקש כניסה הוא מקבל דחייה ומתחיל המשחק - לא טוב
-       # self.Game()   
-
-
-    def Client_Handle(self, connection, client_address):
-        
-        receive_mess = str(connection.recv(1024), 'utf-8') # name of Team
+    def Client_Handle(self, connection, client_address, nt):
+        # time.sleep(0.5)
+        receive_mess = str(connection.recv(1024), 'utf-8')  # name of Team
         print(receive_mess)
-        self._Teams[self._numTeams] = (receive_mess[:receive_mess.index("\n")], connection, client_address)
-        if (self._numTeams == 2):
-            print("releasing")
-            self._StartGame.release()
+        self._Teams[nt][0] = receive_mess[:receive_mess.index("\n")]
+        print(f"self._Teams[{nt}] = {self._Teams[nt]}")
+        if (nt == 2):
+            try:
+                self._StartGame.release()
+                print("releasing")
+            except:
+                pass
+        print(f"self._Teams[{nt}] = {self._Teams[nt]}")
 
-
-        
-
-
-    def Game(self): # main thread
+    def Game(self):  # main thread
         time.sleep(10)
+        print("START-GAME")
         problem = self.GeneratingProblem()
-        answer = int(problem[0])+int(problem[2])
-        
+        answer = int(problem[0]) + int(problem[2])
+        print(f"self._Teams[1][0] = {self._Teams[1][0]} \nself._Teams[2][0] = {self._Teams[2][0]}")
         message = "Welcome to Quick Maths.\nPlayer 1: " + str(self._Teams[1][0]) + \
-            "\nPlayer 2: " + str(self._Teams[2][0]) +"\n==\nPlease answer the following question as" \
-            + " fast as you can:\nHow much is " + ''.join(problem) + "?"
-        for key, value in self._Teams.items():
-            value[1].sendall(message.encode())
-        
-        # l = Lock()
-        # l.acquire()
-        print(f"state of someOneAns = {self._someOneAns.locked()}")
+                  "\nPlayer 2: " + str(self._Teams[2][0]) + "\n==\nPlease answer the following question as" \
+                  + " fast as you can:\nHow much is " + ''.join(problem) + "?"
+
+        print("sending message")
+
+        for key, value in self._Teams.items(): # if someone exit in the middle of the game there is error i tried to fix it but its not realistic
+            try:
+                value[1].sendall(message.encode())
+            except ConnectionResetError or ConnectionAbortedError:
+                self._numTeams -= 1
+                self.startServer()
+
+
+
         self._someOneAns.acquire()
-        print(f"state of someOneAns = {self._someOneAns.locked()}")
+
         print("threads go into checkFirst")
-        team1 = Thread(target= self.CheckFirst, args=(answer, 1))
-        team2 = Thread(target= self.CheckFirst, args=(answer, 2))
+
+        team1 = Thread(target=self.CheckFirst, args=(answer, 1))
+        team2 = Thread(target=self.CheckFirst, args=(answer, 2))
         team1.start()
         team2.start()
-        self._someOneAns.acquire()
-        # l.acquire()
+        self._someOneAns.acquire() # wait here
+        self._someOneAns.release() # for NOT waiting in line 151
         print("some one answer")
-        time.sleep(0.001)
+
+        print(f"result = {self._result}")
+
         for key, value in self._Teams.items():
-            if (not team1 and team2 != "draw"):
-                value[1].sendall(team1.encode())
-            elif (not team2 and team1 != "draw"):
-                value[1].sendall(team2.encode())
-            else:
-                summary = "Game over!\nThe correct answer was " +str(answer)+ "!\n\n" \
-                    + "DRAW!!!"
-                value[1].sendall(summary.encode())
+            try:
+                value[1].sendall(self._result.encode())
+            except:
+                continue
 
-        # jumping to 'startTCP()' and ending the game
+        while (team1.is_alive() or team2.is_alive()):
+            # print(f"team1.is_alive() = {team1.is_alive()}\nteam2.is_alive() = {team2.is_alive()}")
+            continue
+        # time.sleep(3)
+        # jumping to 'startServer()' and ending the game
 
-    def CheckFirst(self, answer, c) -> str:
-        print(f"answer = {answer}")
+    def CheckFirst(self, answer, c):
+
         start_time = time.time()
-        summary = ''
-        while (time.time() - start_time < 10):      
-            answer_Team = str(self._Teams[c][1].recv(1024), 'utf-8') # maybe need less than 1024
-            print(f"answer of team{c} = {answer_Team}")
-            print(f"not answer_Team = {answer_Team != None}")
-            # self._FirstAns.acquire()
-            print("start ifim")
-            if ((answer_Team != None) and (not self._finishGame) and answer_Team==answer):
-                summary = "Game over!\nThe correct answer was " +str(answer)+ "!\n\n" \
-                    + "Congratulations to the winner: " +self._Teams[c][0]
-                print("if1")
-                self._someOneAns.release()
+
+        while (time.time() - start_time < 10):
+            try:
+                print(f"thread of team{c} is waiting in recv")
+                answer_Team = str(self._Teams[c][1].recv(1024), 'utf-8')  # maybe need less than 1024
+                print(f"thread of team{c} is after recv")
+            except ConnectionAbortedError:
+                return
+            except socket.timeout:
+                print("socket timeout")
+                break
+            except:
+                return
+            print(f"thread of team{c} is before FirstAns.acquire")
+            if (self._finishGame):
+                return
+            self._FirstAns.acquire()  # critical section
+            print(f"thread of team{c} is after FirstAns.acquire")
+            if (self._finishGame):
+                return
+            if (time.time() - start_time >= 10):
+                self._result = "Game over!\nThe correct answer was " + str(answer) + "!\n\n" \
+                               + "DRAW!!!"
+                try:
+                    self._someOneAns.release()
+                except:
+                    pass
                 self._finishGame = True
-                # self._FirstAns.release()
-                return summary
-            elif ((answer_Team != None) and (not self._finishGame) and answer_Team!=answer):
-                if (c==1):
-                    summary = "Game over!\nThe correct answer was " +str(answer)+ "!\n\n" \
-                        + "Congratulations to the winner: " +self._Teams[2][0]
+                return
+            # print(f"answer of team{c} = {answer_Team}")
+
+
+            # print("start ifim")
+            if ((answer_Team != None) and (not self._finishGame) and answer_Team == answer):
+                self._result = "Game over!\nThe correct answer was " + str(answer) + "!\n\n" \
+                          + "Congratulations to the winner: " + self._Teams[c][0]
+                # print("if1")
+                try:
+                    self._someOneAns.release()
+                except:
+                    pass
+                self._finishGame = True
+                try:
+                    self._FirstAns.release()
+                except:
+                    pass
+                return
+
+            elif ((answer_Team != None) and (not self._finishGame) and answer_Team != answer):
+                # print("if2")
+                if (c == 1):
+                    self._result = "Game over!\nThe correct answer was " + str(answer) + "!\n\n" \
+                              + "Congratulations to the winner: " + self._Teams[2][0]
                 else:
-                    summary = "Game over!\nThe correct answer was " +str(answer)+ "!\n\n" \
-                        + "Congratulations to the winner: " +self._Teams[1][0]
-                print("if2")
-                self._someOneAns.release()
+                    self._result = "Game over!\nThe correct answer was " + str(answer) + "!\n\n" \
+                              + "Congratulations to the winner: " + self._Teams[1][0]
+
+                try:
+                    self._someOneAns.release()
+                except:
+                    pass
                 self._finishGame = True
-                # self._FirstAns.release()
-                return summary
-            # self._FirstAns.release()
+                try:
+                    self._FirstAns.release()
+                except:
+                    pass
+                return
+
+            try:
+                self._FirstAns.release()
+            except:
+                pass
+        self._finishGame = True
         try:
             self._someOneAns.release()
         except:
             pass
-        return "draw"
+        if (self._result != ""):
+            return
+        self._result = "Game over!\nThe correct answer was " + str(answer) + "!\n\n" \
+                           + "DRAW!!!\n"
 
 
-
-    def GeneratingProblem(self) -> str:
+    def GeneratingProblem(self) -> list:
         # operations = ["+"]
-        lst = [str(random.randint(1,4)),"+", str(random.randint(1,5))]
+        lst = [str(random.randint(1, 4)), "+", str(random.randint(1, 5))]
         return lst
 
-if __name__ == "__main__":
-    Server ("127.0.0.1", 2062, 13117)
 
-    
+if __name__ == "__main__":
+    Server("127.0.0.1", 2062, 13117)
+
+
 
