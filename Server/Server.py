@@ -8,9 +8,9 @@ import struct
 import time
 import random
 import sys
-
 from select import select
-# import readchar
+import colorama
+from colorama import Fore, Style
 
 CHANNEL_UDP = 13117
 MAGIC_COOKIE = 0xabcddcba
@@ -55,31 +55,31 @@ class Server():
         self._stopServer = True
 
     def startServer(self):
-    '''
+        '''
 		starting the server, open two new threads for TCP and UDP.
-	'''
+	    '''
         threading.Thread(target=self.Listening_UDP).start()
         threading.Thread(target=self.Listening_TCP).start()
         self.startNewGame()
 
 
     def startNewGame(self): 
-    '''
+        '''
 		start new game, after game is finished we call to clear function 
         to reset all the event/parametrs/locks we need.
-	'''      
+	    '''      
         self._startGame.wait()
         self.Game()
         self.clear()
     
     def clear(self):
-    '''
+        '''
 		reset all the event/parametrs/locks we need.
-	'''
+	    '''
         for key, val in self._Teams.items():
             val[1].close()
 
-        print("Game Over, sending out offer requests...")
+        self.bonusPrint("Game Over, sending out offer requests...")
         
         self._event.clear()
         self._startGame.clear()
@@ -92,13 +92,13 @@ class Server():
         self.startNewGame()
 
     def Listening_UDP(self):
-    '''
+        '''
 		create communication with UDP, and send the packet.
 		if the game not started we send “offer” announcements
         via UDP broadcast once every second.
-	'''
+	    '''
 
-        print(f"Server started, listening on IP address {self._IP}")
+        self.bonusPrint("Server started, listening on IP address " + self._IP)
         packet_to_send = struct.pack(">IbH", MAGIC_COOKIE, TYPE_BROADCAST, self._port)
         ip = '.'.join(self._IP.split('.')[:2]) + '.255.255'
 
@@ -117,7 +117,7 @@ class Server():
             try:
                 connection, client_address = self._socketTCP.accept()  # waiting for client
             except:
-                print("exceptServer")
+                self.bonusPrint("exceptServer")
                 continue
             self._numTeamINC.acquire()
             self._numTeams += 1
@@ -132,10 +132,10 @@ class Server():
         c.send("rejecting")
 
     def Client_Handle(self, connection, client_address, nt):
-    '''
+        '''
 		get from the each client, 
         the message as name of his team.
-	'''
+	    '''
 
         receive_mess = str(connection.recv(KILO_BYTE), 'utf-8')  # name of Team
         self._Teams[nt][0] = receive_mess[:receive_mess.index("\n")]
@@ -164,7 +164,7 @@ class Server():
             try:
                 value[1].sendall(message.encode())
             except ConnectionResetError or ConnectionAbortedError:
-                print("connection lost")
+                self.bonusPrint("connection lost")
                 self._numTeams -= 1
                 self.startNewGame()
 
@@ -184,14 +184,14 @@ class Server():
         team2.join()
 
     def CheckFirst(self, answer, connection, numteam):
-    '''
+        '''
 		parametrs:
 			answer - the correct answer of the Generating Problem.
 			connection - the connection.
 			numteam - number of the team.
 		This function is to determine who of the teams answer the question first.
 		This function print the winner.
-	'''
+	    '''
         start_time = time.time()
        
         while time.time() - start_time < TENSEC:
@@ -259,6 +259,13 @@ class Server():
     def GeneratingProblem(self) -> list:
         lst = [str(random.randint(1, 4)), "+", str(random.randint(1, 5))]
         return lst
+
+    def bonusPrint(self, text):
+        notGood = ['BLACK']
+        style = vars(colorama.Fore)
+        randomColors = [style[c] for c in style if c not in notGood]
+        _color = random.choice(randomColors)
+        print(''.join([_color + word for word in text]))
 
 
 if __name__ == "__main__":
