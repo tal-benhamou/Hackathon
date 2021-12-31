@@ -6,7 +6,10 @@ from scapy.arch import get_if_addr
 import getch
 import keyboard
 import time
+import random
 from select import select
+import colorama
+from colorama import Fore, Style, Back
 
 CHANNEL_UDP = 13117
 MAGIC_COOKIE = 0xabcddcba
@@ -22,13 +25,14 @@ class Client():
         self._teamName = teamName
         self.communicateWithServer()
 
-    '''
+        
+    def communicateWithServer(self):
+        '''
         open TCP socket and UDP socket with reused and broadcast,
         UDP socket recieve offer requests from server and check the offer,
         connect with TCP connection to the server and starting the game.
-    '''
-    def communicateWithServer(self):
-        print("Client started, listening for offer requests...")
+        '''
+        self.bonusPrint("Client started, listening for offer requests...")
         self._socketTCP = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._socketUDP = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
         self._socketUDP.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -41,7 +45,7 @@ class Client():
                 offer_from_server, ip = self._socketUDP.recvfrom(KILO_BYTE)
             except:
                 continue  # try again
-            print(f"Received offer from {ip}, attempting to connect...")
+            self.bonusPrint("Receive offer from " +str(ip)+ ", attempting to connect...")
 
             magic_cookie, types, TCPort = struct.unpack(">IbH", offer_from_server)
             if (magic_cookie != MAGIC_COOKIE or types != TYPE_BROADCAST):
@@ -52,20 +56,20 @@ class Client():
                 self._socketTCP.connect((ip[0], TCPort))
                 break
             except:
-                print("exceptClient")
+                self.bonusPrint("exceptClient")
                 continue  # try again
         self.Game()
 
   
     def Game(self):
-    '''
+        '''
         recieve the game over TCP connection and print, sending answer over TCP connection
         recieve the result of the game over TCP connection, and print.
-    '''
+        '''
         message = self._teamName + "\n"
         self._socketTCP.send(bytes(message, encoding='utf-8'))
         from_server = str(self._socketTCP.recv(KILO_BYTE), 'utf-8')
-        print(f"{from_server}")
+        self.bonusPrint(from_server)
 
         user_input, a, b = select([sys.stdin, self._socketTCP], [], [], TIME_OUT_LENGTH)
 
@@ -78,10 +82,10 @@ class Client():
         try:
             from_server = str(self._socketTCP.recv(KILO_BYTE), 'utf-8')
         except:
-            print("TIMEOUT")
-        
-        print(from_server)
-        print("Server disconnected, listening for offer requests...")
+            self.bonusPrint("TIMEOUT")
+
+        self.bonusPrint(from_server)
+        self.bonusPrint("Server disconnected, listening for offer requests...")
         self.closeSockets()
         self.communicateWithServer()
 
@@ -89,6 +93,13 @@ class Client():
         self._socketTCP.close()
         self._socketUDP.close()
 
+    def bonusPrint(self, text):
+        notGood = ['BLACK', 'WHITE']
+        style = vars(colorama.Fore)
+        randomColors = [style[c] for c in style if c not in notGood]
+        _color = random.choice(randomColors)
+        print(''.join([_color + word for word in text]))
+    
 
 if __name__ == "__main__":
     Client(get_if_addr("eth1"), "Curdians")
