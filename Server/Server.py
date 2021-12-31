@@ -55,19 +55,27 @@ class Server():
         self._stopServer = True
 
     def startServer(self):
-        # starting server with threads
+    '''
+		starting the server, open two new threads for TCP and UDP.
+	'''
         threading.Thread(target=self.Listening_UDP).start()
         threading.Thread(target=self.Listening_TCP).start()
         self.startNewGame()
 
 
     def startNewGame(self): 
-           
+    '''
+		start new game, after game is finished we call to clear function 
+        to reset all the event/parametrs/locks we need.
+	'''      
         self._startGame.wait()
         self.Game()
         self.clear()
     
     def clear(self):
+    '''
+		reset all the event/parametrs/locks we need.
+	'''
         for key, val in self._Teams.items():
             val[1].close()
 
@@ -81,17 +89,20 @@ class Server():
         self._FirstAns = Lock()
         self._eventUDP.set()
         self._eventUDP.clear()
-       
-        # time.sleep(1)
         self.startNewGame()
 
     def Listening_UDP(self):
+    '''
+		create communication with UDP, and send the packet.
+		if the game not started we send “offer” announcements
+        via UDP broadcast once every second.
+	'''
+
         print(f"Server started, listening on IP address {self._IP}")
         packet_to_send = struct.pack(">IbH", MAGIC_COOKIE, TYPE_BROADCAST, self._port)
         ip = '.'.join(self._IP.split('.')[:2]) + '.255.255'
 
-        while (True):  # true = the game dont start yet
-            # print("send UDP")
+        while (True): 
             self._socketUDP.sendto(packet_to_send, (ip, self._channel))
             time.sleep(1)
             if self._numTeams == 2:
@@ -99,7 +110,9 @@ class Server():
 
 
     def Listening_TCP(self):
-        
+        '''
+            collect 2 clients over TCP connection
+        '''
         while True:
             try:
                 connection, client_address = self._socketTCP.accept()  # waiting for client
@@ -119,6 +132,11 @@ class Server():
         c.send("rejecting")
 
     def Client_Handle(self, connection, client_address, nt):
+    '''
+		get from the each client, 
+        the message as name of his team.
+	'''
+
         receive_mess = str(connection.recv(KILO_BYTE), 'utf-8')  # name of Team
         self._Teams[nt][0] = receive_mess[:receive_mess.index("\n")]
         if (nt == 2):
@@ -130,6 +148,11 @@ class Server():
 
 
     def Game(self):  # main thread
+        '''
+            waiting 10 sec, generating a math problem, sending the prob over TCP connection,
+            sending 2 thread to CheckFirst for recieve the answer of the clients,
+            sending the result of the Game and jumping to start another game.
+        '''
         time.sleep(TENSEC)
         problem = self.GeneratingProblem()
         answer = int(problem[0]) + int(problem[2])
@@ -161,7 +184,14 @@ class Server():
         team2.join()
 
     def CheckFirst(self, answer, connection, numteam):
-
+    '''
+		parametrs:
+			answer - the correct answer of the Generating Problem.
+			connection - the connection.
+			numteam - number of the team.
+		This function is to determine who of the teams answer the question first.
+		This function print the winner.
+	'''
         start_time = time.time()
        
         while time.time() - start_time < TENSEC:
@@ -227,7 +257,6 @@ class Server():
             return
 
     def GeneratingProblem(self) -> list:
-        # operations = ["+"]
         lst = [str(random.randint(1, 4)), "+", str(random.randint(1, 5))]
         return lst
 

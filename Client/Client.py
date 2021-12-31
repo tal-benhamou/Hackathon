@@ -23,7 +23,9 @@ class Client():
         self.communicateWithServer()
 
     '''
-     open TCP socket and UDP socket with reused and broadcast
+        open TCP socket and UDP socket with reused and broadcast,
+        UDP socket recieve offer requests from server and check the offer,
+        connect with TCP connection to the server and starting the game.
     '''
     def communicateWithServer(self):
         print("Client started, listening for offer requests...")
@@ -33,7 +35,6 @@ class Client():
         self._socketUDP.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
         ip2 = '.'.join(self._ip.split('.')[:2]) + '.255.255'
         self._socketUDP.bind((ip2, CHANNEL_UDP))  # dont change
-        
 
         while True:
             try:
@@ -55,7 +56,12 @@ class Client():
                 continue  # try again
         self.Game()
 
+  
     def Game(self):
+    '''
+        recieve the game over TCP connection and print, sending answer over TCP connection
+        recieve the result of the game over TCP connection, and print.
+    '''
         message = self._teamName + "\n"
         self._socketTCP.send(bytes(message, encoding='utf-8'))
         from_server = str(self._socketTCP.recv(KILO_BYTE), 'utf-8')
