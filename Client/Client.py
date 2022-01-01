@@ -10,6 +10,8 @@ import random
 from select import select
 import colorama
 from colorama import Fore, Style, Back
+import pickle
+import json
 
 CHANNEL_UDP = 13117
 MAGIC_COOKIE = 0xabcddcba
@@ -85,6 +87,15 @@ class Client():
             self.bonusPrint("TIMEOUT")
 
         self.bonusPrint(from_server)
+
+        # receive statistics from server
+        try:
+            stat_from_server = str(self._socketTCP.recv(KILO_BYTE), 'utf-8')
+            self.bonusPrint(stat_from_server)
+        except:
+            self.bonusPrint("stat from server dosent reviced")
+
+        
         self.bonusPrint("Server disconnected, listening for offer requests...")
         self.closeSockets()
         self.communicateWithServer()

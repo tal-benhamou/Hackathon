@@ -11,6 +11,8 @@ import sys
 from select import select
 import colorama
 from colorama import Fore, Style
+import pickle
+import json
 
 CHANNEL_UDP = 13117
 MAGIC_COOKIE = 0xabcddcba
@@ -18,6 +20,7 @@ TYPE_BROADCAST = 0x2
 KILO_BYTE = 1024
 SELECT_TIMEOUT = 0.5
 TENSEC = 10
+PORT_TEAM = 2062
 
 class Server():
 
@@ -48,6 +51,8 @@ class Server():
         self._result = ""
         self._stopServer = False
         self._finishGame = False
+
+        self._stat = {}
 
         self.startServer()
 
@@ -121,15 +126,16 @@ class Server():
                 continue
             self._numTeamINC.acquire()
             self._numTeams += 1
-            self._Teams[self._numTeams] = ['', connection, client_address]
             if (self._numTeams < 3):
+                self._Teams[self._numTeams] = ['', connection, client_address]
                 start_new_thread(self.Client_Handle, (connection, client_address, self._numTeams))
             else:
                 self.reject(connection)
 
 
     def reject(self, c):
-        c.send("rejecting")
+        c.sendall("rejecting".encode())
+        self._numTeamINC.release()
 
     def Client_Handle(self, connection, client_address, nt):
         '''
@@ -144,6 +150,8 @@ class Server():
                 self._startGame.set()
             except:
                 pass
+        if self._Teams[nt][0] not in self._stat.keys():
+            self._stat[self._Teams[nt][0]] = 0
         self._numTeamINC.release()
 
 
@@ -160,7 +168,7 @@ class Server():
                   "\nPlayer 2: " + str(self._Teams[2][0]) + "\n==\nPlease answer the following question as" \
                   + " fast as you can:\nHow much is " + ''.join(problem) + "?"
 
-        for key, value in self._Teams.items(): # if someone exit in the middle of the game there is error i tried to fix it but its not realistic
+        for key, value in self._Teams.items():
             try:
                 value[1].sendall(message.encode())
             except ConnectionResetError or ConnectionAbortedError:
@@ -182,6 +190,25 @@ class Server():
 
         team1.join()
         team2.join()
+        
+        # sending statistics to clients
+
+        data = ""
+        data+="--------------------------------\n"
+        dict_from_server = {k: v for k, v in sorted(self._stat.items(), key=lambda item: item[1], reverse=True)}
+        i = 1
+        data+="Table Of The Server\n"
+        data+="{:<8} {:<15} {:<10}\n".format('#','Team','Pts')
+        for Team, Pts in dict_from_server.items():
+            data+="{:<8} {:<15} {:<10}\n".format(i, Team, Pts)
+            i+=1
+        data+="--------------------------------\n"
+        for key, value in self._Teams.items():
+            try:
+                value[1].sendall(data.encode())
+            except:
+                continue
+
 
     def CheckFirst(self, answer, connection, numteam):
         '''
@@ -193,40 +220,55 @@ class Server():
 		This function print the winner.
 	    '''
         start_time = time.time()
-       
+        self._stat[self._Teams[numteam][0]] -= 5
         while time.time() - start_time < TENSEC:
 
             answer_Team, a, b = select([connection], [], [], SELECT_TIMEOUT)
-            if answer_Team:
-                answer_Team = str(connection.recv(KILO_BYTE), 'utf-8')
-            elif not self._finishGame:
-                continue
-            
+            answer_Team_recv = ''
             self._FirstAns.acquire() # cs
+            if answer_Team:
+                answer_Team_recv = str(connection.recv(KILO_BYTE), 'utf-8')
+                
+            elif not self._finishGame:
+                self._FirstAns.release()
+                continue
 
-            if ((not self._finishGame) and answer_Team == answer):
-
-                self._result = "Game over!\nThe correct answer was " + str(answer) + "!\n\n" \
-                        + "Congratulations to the winner: " + self._Teams[numteam][0]
-
-                self._event.set()
+            if len(answer_Team) != 0 and (not self._finishGame) and answer_Team_recv != '' and answer_Team_recv.endswith(str(answer)):
                 self._finishGame = True
+                self._stat[self._Teams[numteam][0]] += 15
+                self._result = "Game over!\nThe correct answer was " + str(answer) + "!\n\n" \
+                        + "Congratulations to the winner: " + self._Teams[numteam][0] \
+                            + "\n"+self._Teams[numteam][0] +" Got 15 Points." 
+                if numteam == 1:
+                    self._result += "\n"+self._Teams[2][0] +" lost 5 Points." 
+                else:
+                    self._result += "\n"+self._Teams[1][0] +" lost 5 Points." 
+                                             
+                self._event.set()
+                
                 try:
                     self._FirstAns.release()
                 except:
                     pass
+
                 return
 
-            elif ((not self._finishGame) and answer_Team != answer):
-
+            elif (len(answer_Team) != 0 and (not self._finishGame) and answer_Team_recv != '' and not answer_Team_recv.endswith(str(answer))):
+                self._finishGame = True
                 if (numteam == 1):
                     self._result = "Game over!\nThe correct answer was " + str(answer) + "!\n\n" \
-                            + "Congratulations to the winner: " + self._Teams[2][0]
+                            + "Congratulations to the winner: " + self._Teams[2][0]  \
+                                + "\n"+self._Teams[2][0] +" lost 5 Points." \
+                                + "\n"+self._Teams[1][0] +" lost 15 Points."
+                    self._stat[self._Teams[1][0]] -= 10
                 else:
                     self._result = "Game over!\nThe correct answer was " + str(answer) + "!\n\n" \
-                            + "Congratulations to the winner: " + self._Teams[1][0]
+                            + "Congratulations to the winner: " + self._Teams[1][0]  \
+                                + "\n"+self._Teams[1][0] +" lost 5 Points." \
+                                + "\n"+self._Teams[2][0] +" lost 15 Points."
+                    self._stat[self._Teams[2][0]] -= 10
 
-                self._finishGame = True
+                
                 self._event.set()
                 try:
                     self._FirstAns.release()
@@ -246,7 +288,7 @@ class Server():
         # after while = no one answer 
         if not self._finishGame:
             self._result = "Game over!\nThe correct answer was " + str(answer) + "!\n\n" \
-                            + "DRAW!!!"
+                            + "DRAW!!!\nBoth teams lost 5 points."
             self._finishGame = True
             try:
                 self._FirstAns.release()
@@ -269,7 +311,7 @@ class Server():
 
 
 if __name__ == "__main__":
-    Server(get_if_addr("eth1"), 2062, CHANNEL_UDP)
+    Server(get_if_addr("eth1"), PORT_TEAM, CHANNEL_UDP)
 
 
 
